@@ -1,23 +1,102 @@
 const net = require('net');
-const Connection = require('./connection');
+const crypto = require('crypto');
+
+const randomId = () => crypto.randomBytes(8).toString('hex');
 const { redis } = require('./redis');
 
 const { QUORUM } = process.env;
 
 const {
   removeReplica, setState, deleteMaster, getReqHeader,
-  publishToChannel, setMaster, getReplicas, getRole,
+  publishToChannel, setMaster, getReplicas, getRole, getCurrentIp,
 } = require('./util');
 
-function turtlekeeperErrorHandler() {
-  return async function handler() {
-    // handle server down
-    this.connection?.clearHeartbeat();
+class Turtlekeeper {
+  constructor(config, role) {
+    this.config = config;
+    this.role = role;
+    this.unhealthyCount = 0;
+    this.heartrate = 3000;
+    this.id = randomId();
+    this.connect();
+  }
+
+  async reconnect() {
+    await this.connect(this.config);
+  }
+
+  async connect() {
+    const client = net.connect(this.config);
+
+    this.startHeartbeat();
+    client.on('readable', async () => {
+      const reqHeader = getReqHeader(client);
+      if (!reqHeader) return;
+      const object = JSON.parse(reqHeader);
+
+      if (object.message === 'connected') {
+        // this.connection = new Connection(client);
+        // await this.connection.init();
+        // resolve(this.connection);
+      }
+      if (object.success) {
+        this[object.method](object);
+      }
+    });
+
+    client.on('error', () => {});
+    client.on('end', () => {
+      // console.log('disconnected from server');
+    });
+
+    this.client = client;
+  }
+
+  disconnect() {
+    this.connection.end();
+  }
+
+  async startHeartbeat() {
+    this.ip = await getCurrentIp();
+
+    // start sending heartbeat
+    this.sendHeartbeat();
+  }
+
+  sendHeartbeat() {
+    this.send({
+      id: this.id,
+      role: 'turtlekeeper',
+      method: 'heartbeat',
+      ip: this.ip,
+    });
+    this.heartbeatTimeout = setTimeout(() => {
+      this.heartbeatError();
+    }, this.heartrate);
+    this.interval = setTimeout(() => {
+      this.sendHeartbeat();
+    }, this.heartrate);
+  }
+
+  heartbeat(object) {
+    this.role = object.role;
+    this.ip = object.ip;
+    this.clearHeartbeatTimeout();
+    if (object.role === 'master') {
+      console.log(`master ${object.ip} alive\n`);
+    } else if (object.role === 'replica') {
+      console.log(`replica ${object.ip} alive\n`);
+    }
+  }
+
+  async heartbeatError() {
     try {
+      this.clearHeartbeat();
       const ip = `${this.config.host}:${this.config.port}`;
       const role = await getRole(ip);
       if (!role) {
         this.connection.end();
+        return;
       }
       this.role = role;
 
@@ -36,7 +115,7 @@ function turtlekeeperErrorHandler() {
         this.unhealthyCount = 0;
         setTimeout(async () => {
           await this.reconnect();
-        }, 9);
+        }, 3);
         return;
       }
       if (this.role === 'master') {
@@ -72,49 +151,22 @@ function turtlekeeperErrorHandler() {
 
     // reset unhealthyCount
     this.unhealthyCount = 0;
-  };
-}
-
-class Turtlekeeper {
-  constructor(config, role) {
-    this.config = config;
-    this.role = role;
-    this.unhealthyCount = 0;
   }
 
-  async reconnect() {
-    setTimeout(async () => {
-      await this.connect(this.config);
-      // reconnect timeout
-    }, 3000);
+  clearHeartbeat() {
+    clearTimeout(this.interval);
   }
 
-  async connect() {
-    return new Promise((resolve, reject) => {
-      const client = net.connect(this.config);
-
-      client.once('readable', async () => {
-        const reqHeader = getReqHeader(client);
-        if (!reqHeader) return;
-        const object = JSON.parse(reqHeader);
-
-        if (object.message === 'connected') {
-          this.connection = new Connection(client);
-          // await this.connection.init();
-          resolve(this.connection);
-        }
-        reject();
-      });
-
-      client.on('error', turtlekeeperErrorHandler().bind(this));
-      client.on('end', () => {
-        // console.log('disconnected from server');
-      });
-    });
+  clearHeartbeatTimeout() {
+    clearTimeout(this.heartbeatTimeout);
   }
 
-  disconnect() {
-    this.connection.end();
+  send(messages) {
+    this.client.write(`${JSON.stringify(messages)}\r\n\r\n`);
+  }
+
+  end() {
+    this.client.end();
   }
 }
 

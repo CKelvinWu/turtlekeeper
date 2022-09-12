@@ -15,8 +15,7 @@ const { PORT, CHANNEL, REPLICA_KEY } = process.env;
 
 function createConnection(config, role) {
   const turtleKeeper = new Turtlekeeper(config, role);
-  const connection = turtleKeeper.connect();
-  return connection;
+  return turtleKeeper;
 }
 
 (async () => {
@@ -46,7 +45,7 @@ subscriber.on('message', async (channel, message) => {
       // Check if still in health check
       if (isInReplicas) {
         const replicaConfig = stringToHostAndPort(data.ip);
-        await createConnection(replicaConfig);
+        await createConnection(replicaConfig, 'replica');
         console.log(`New replica ${data.ip} has joined.`);
       }
     } else if (data.role === 'master') {
@@ -54,7 +53,7 @@ subscriber.on('message', async (channel, message) => {
       const isMaster = (master === data.ip);
       if (isMaster) {
         const masterConfig = stringToHostAndPort(data.ip);
-        await createConnection(masterConfig);
+        await createConnection(masterConfig, 'master');
       }
     }
   }
