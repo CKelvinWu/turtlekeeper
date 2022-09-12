@@ -59,31 +59,4 @@ module.exports = class Connection {
   end() {
     this.client.end();
   }
-  // initialize() {
-  //   // request for master, replicas, and turtlekeepers
-  //   this.send({
-  //     id: this.id,
-  //     role: 'turtlekeeper',
-  //     method: 'init',
-  //     ip: getCurrentIp(),
-  //   });
-  // }
-
-  // initialize master, replicas, and turtlekeepers
-  // async init(object) {
-  //   const { group, role, ip } = object;
-  //   this.role = role;
-  //   this.ip = ip;
-  //   this.master = group.master;
-  //   this.replicas = group.replicas;
-  //   this.turtlekeepers = group.turtlekeepers;
-
-  //   if (this.role === 'replica') {
-  //     await setReplica(ip);
-  //   }
-  //   console.log(`group: ${group}`);
-  //   console.log(`master: ${this.master}`);
-  //   console.log(`replicas: ${this.replicas}`);
-  //   console.log(`turtlekeepers: ${this.turtlekeepers}\n`);
-  // }
 };

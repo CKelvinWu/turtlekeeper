@@ -1,7 +1,14 @@
 require('dotenv').config();
 // const http = require('http');
+const { redis } = require('./redis');
 
-const { HOST, PORT } = process.env;
+const {
+  HOST, PORT, MASTER_KEY, REPLICA_KEY, STATE_KEY, CHANNEL,
+} = process.env;
+
+function stringToHostAndPort(address) {
+  return { host: address.split(':')[0], port: address.split(':')[1] };
+}
 
 async function getCurrentIp() {
   return new Promise((resolve) => {
@@ -13,6 +20,55 @@ async function getCurrentIp() {
     //   });
     // }).end();
   });
+}
+
+async function getMaster() {
+  const master = await redis.get(MASTER_KEY);
+  return master;
+}
+
+async function setMaster(ip) {
+  await redis.set(MASTER_KEY, ip);
+}
+
+async function deleteMaster() {
+  await redis.del(MASTER_KEY);
+}
+
+async function getMasterConfig() {
+  const master = await getMaster();
+  return stringToHostAndPort(master);
+}
+
+async function getReplicasConfig() {
+  const replicas = await redis.hkeys(REPLICA_KEY);
+  const replicasConfig = replicas.map((replica) => stringToHostAndPort(replica));
+  return replicasConfig;
+}
+
+async function setReplica(key) {
+  await redis.hset(REPLICA_KEY, key, 1);
+}
+
+async function getReplicas() {
+  const replicas = await redis.hkeys(REPLICA_KEY);
+  return replicas;
+}
+
+async function removeReplica(key) {
+  await redis.hdel(REPLICA_KEY, key);
+}
+
+async function setState(state) {
+  const states = ['active', 'voting'];
+  if (states.includes(state)) {
+    await redis.set(STATE_KEY, state);
+  }
+}
+
+async function getState() {
+  const state = await redis.get(STATE_KEY);
+  return state;
 }
 
 function getReqHeader(client) {
@@ -38,7 +94,36 @@ function getReqHeader(client) {
   return reqHeader;
 }
 
+async function publishToChannel(message) {
+  await redis.publish(CHANNEL, JSON.stringify(message));
+}
+
+async function getRole(ip) {
+  const master = await getMaster();
+  if (ip === master) {
+    return 'master';
+  }
+  const replicas = await getReplicas();
+  if (replicas.includes(ip)) {
+    return 'replica';
+  }
+  return false;
+}
+
 module.exports = {
+  stringToHostAndPort,
   getCurrentIp,
+  getMaster,
+  setMaster,
+  deleteMaster,
+  getMasterConfig,
+  getReplicasConfig,
+  setReplica,
+  getReplicas,
+  removeReplica,
+  getState,
+  setState,
   getReqHeader,
+  publishToChannel,
+  getRole,
 };
