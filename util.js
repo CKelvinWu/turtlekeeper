@@ -1,24 +1,30 @@
 require('dotenv').config();
-// const http = require('http');
+const http = require('http');
 const { redis } = require('./redis');
 
 const {
-  HOST, PORT, MASTER_KEY, REPLICA_KEY, STATE_KEY, CHANNEL,
+  NODE_ENV, PORT, MASTER_KEY, REPLICA_KEY, STATE_KEY, CHANNEL,
 } = process.env;
 
 function stringToHostAndPort(address) {
-  return { host: address.split(':')[0], port: address.split(':')[1] };
+  if (address) {
+    const hostAndPort = { host: address.split(':')[0], port: address.split(':')[1] };
+    return hostAndPort;
+  }
+  return null;
 }
 
 async function getCurrentIp() {
   return new Promise((resolve) => {
-    resolve(`${HOST}:${PORT}`);
-    // http.get({ host: 'api.ipify.org', port: 80, path: '/' }, (resp) => {
-    //   resp.on('data', (ip) => {
-    //     resolve(`${ip}:${PORT}`);
-    //     console.log(`My public IP address is: ${ip}`);
-    //   });
-    // }).end();
+    http.get({ host: 'api.ipify.org', port: 80, path: '/' }, (res) => {
+      res.on('data', (ip) => {
+        console.log(`My public IP address is: ${ip}`);
+        if (NODE_ENV === 'development') {
+          resolve(`localhost:${PORT}`);
+        }
+        resolve(`${ip}:${PORT}`);
+      });
+    }).end();
   });
 }
 
@@ -29,10 +35,6 @@ async function getMaster() {
 
 async function setMaster(ip) {
   await redis.set(MASTER_KEY, ip);
-}
-
-async function deleteMaster() {
-  await redis.del(MASTER_KEY);
 }
 
 async function getMasterConfig() {
@@ -110,12 +112,18 @@ async function getRole(ip) {
   return false;
 }
 
+async function voteInstance(turtlemqIp, myIp) {
+  const [, hgetall] = await redis.multi()
+    .hset(turtlemqIp, myIp, Date.now())
+    .hgetall(turtlemqIp).exec();
+  return Object.values(hgetall[1]).filter((time) => (Date.now() - time) < 9000).length;
+}
+
 module.exports = {
   stringToHostAndPort,
   getCurrentIp,
   getMaster,
   setMaster,
-  deleteMaster,
   getMasterConfig,
   getReplicasConfig,
   setReplica,
@@ -126,4 +134,5 @@ module.exports = {
   getReqHeader,
   publishToChannel,
   getRole,
+  voteInstance,
 };

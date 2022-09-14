@@ -20,7 +20,7 @@ function createConnection(config, role) {
 
 (async () => {
   const state = await getState();
-  if (state !== 'active') {
+  if (state === 'voting') {
     // TODO: retry later
     return;
   }
