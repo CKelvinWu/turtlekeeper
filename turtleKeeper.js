@@ -35,6 +35,33 @@ redis.defineCommand('newMaster', {
   return newMaster`,
 });
 
+redis.defineCommand('canVote', {
+  lua: `
+  local hostIp = KEYS[1]
+  local myIp = KEYS[2]
+  local REPLICA_KEY = KEYS[3]
+  local currentTime = tonumber(ARGV[1])
+  local voteCountTime = tonumber(ARGV[2])
+  local quorum = tonumber(ARGV[3])
+  
+  redis.call('HSET', hostIp, myIp, currentTime)
+  local votes = redis.call('HVALS', hostIp)
+  local vote = 0
+  for i=1,#votes do
+    if (currentTime - votes[i] < voteCountTime) then
+      vote = vote + 1
+    end
+  end
+
+  if (vote ~= quorum) then
+    return false
+  end
+  
+  redis.call('DEL', hostIp)
+  return true
+  `,
+});
+
 class Turtlekeeper {
   constructor(config, role) {
     this.config = config;
@@ -81,12 +108,7 @@ class Turtlekeeper {
       method: 'heartbeat',
       ip: this.ip,
     });
-    const newMaster = await redis.newMaster(
-      2,
-      MASTER_KEY,
-      REPLICA_KEY,
-    );
-    console.log(`new: ${newMaster}`);
+    const newMaster = await redis.newMaster(2, MASTER_KEY, REPLICA_KEY);
     if (newMaster) {
       const masterInfo = { method: 'setMaster', ip: newMaster };
       this.role = 'master';
@@ -124,7 +146,6 @@ class Turtlekeeper {
 
   heartbeat(object) {
     this.role = object.role;
-    // this.ip = object.ip;
     this.clearHeartbeatTimeout();
     if (object.role === 'master') {
       console.log(`master ${object.ip} alive\n`);
@@ -149,11 +170,11 @@ class Turtlekeeper {
       if (this.unhealthyCount < 3) {
         console.log(`unhealthy ${this.role}: ${this.hostIp}`);
         this.unhealthyCount++;
-        await this.reconnect();
+        this.reconnect();
         return;
       }
       await this.vote();
-      this.client.end();
+      // this.client.end();
     } catch (error) {
       console.log('connection failed');
     }
@@ -161,33 +182,34 @@ class Turtlekeeper {
     this.unhealthyCount = 0;
   }
 
-  // async unhealthyCheck() {
-  //   console.log(`unhealthy ${this.role}: ${this.hostIp}`);
-  //   this.unhealthyCount++;
-  //   await this.reconnect();
-  // }
-
   async vote() {
     const { hostIp } = this;
-    const vote = await voteInstance(hostIp, this.ip);
-    // await redis.expire(`vote:${hostIp}`, 9);
-    console.log(`vote: ${vote}`);
-    if (vote !== +QUORUM) {
+    const voteCountTime = 9000;
+    const canVote = await redis.canVote(
+      3,
+      hostIp,
+      this.ip,
+      REPLICA_KEY,
+      Date.now(),
+      voteCountTime,
+      QUORUM,
+    );
+
+    if (!canVote) {
       this.unhealthyCount = 0;
-      setTimeout(async () => {
-        await this.reconnect();
-      }, 3);
+      this.reconnect();
       return;
     }
 
     if (this.role === 'replica') {
       console.log('replica down! remove from list');
       await removeReplica(hostIp);
+      this.client.end();
       return;
     }
 
     // One who get the vote is exactly equal to quorum can select the new master;
-    console.log('I am selecting master');
+    console.log('I am selecting the new master');
 
     // vote a replica from lists
     const replicas = await getReplicas();
