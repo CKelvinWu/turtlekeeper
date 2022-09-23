@@ -3,7 +3,7 @@ const http = require('http');
 const { redis } = require('./redis');
 
 const {
-  NODE_ENV, PORT, MASTER_KEY, REPLICA_KEY, STATE_KEY, CHANNEL,
+  NODE_ENV, PORT, MASTER_KEY, REPLICA_KEY, CHANNEL,
 } = process.env;
 
 function stringToHostAndPort(address) {
@@ -59,18 +59,6 @@ async function getReplicas() {
 
 async function removeReplica(key) {
   await redis.hdel(REPLICA_KEY, key);
-}
-
-async function setState(state) {
-  const states = ['active', 'voting'];
-  if (states.includes(state)) {
-    await redis.set(STATE_KEY, state);
-  }
-}
-
-async function getState() {
-  const state = await redis.get(STATE_KEY);
-  return state;
 }
 
 function getReqHeader(client) {
@@ -129,8 +117,6 @@ module.exports = {
   setReplica,
   getReplicas,
   removeReplica,
-  getState,
-  setState,
   getReqHeader,
   publishToChannel,
   getRole,

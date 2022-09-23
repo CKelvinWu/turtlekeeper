@@ -5,7 +5,6 @@ const { redis } = require('./redis');
 const {
   stringToHostAndPort,
   getMaster,
-  getState,
   getMasterConfig,
   getReplicasConfig,
   getReqHeader,
@@ -19,13 +18,10 @@ function createConnection(config, role) {
 }
 
 (async () => {
-  const state = await getState();
-  if (state === 'voting') {
-    // TODO: retry later
-    return;
-  }
   const masterConfig = await getMasterConfig();
-  createConnection(masterConfig, 'master');
+  if (masterConfig) {
+    createConnection(masterConfig, 'master');
+  }
   // Create existing replicas connections
   const replicasConfig = await getReplicasConfig();
   replicasConfig.forEach(async (replicaConfig) => {
@@ -41,13 +37,13 @@ subscriber.on('message', async (channel, message) => {
   const data = JSON.parse(message);
   if (data.method === 'join') {
     if (data.role === 'replica') {
-      const isInReplicas = await redis.hget(REPLICA_KEY, data.ip);
+      // const isInReplicas = await redis.hget(REPLICA_KEY, data.ip);
       // Check if still in health check
-      if (isInReplicas) {
-        const replicaConfig = stringToHostAndPort(data.ip);
-        await createConnection(replicaConfig, 'replica');
-        console.log(`New replica ${data.ip} has joined.`);
-      }
+      // if (isInReplicas) {
+      const replicaConfig = stringToHostAndPort(data.ip);
+      await createConnection(replicaConfig, 'replica');
+      console.log(`New replica ${data.ip} has joined.`);
+      // }
     } else if (data.role === 'master') {
       const master = await getMaster();
       const isMaster = (master === data.ip);
