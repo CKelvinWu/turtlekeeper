@@ -16,7 +16,7 @@ const {
 } = require('./util');
 
 redis.defineCommand('newMaster', {
-  lua: `    
+  lua: `
   local data = redis.call("GET", KEYS[1])
   if (data) then
     return false
@@ -81,7 +81,6 @@ class Turtlekeeper {
 
   async reconnect() {
     this.client?.removeAllListeners();
-    // this.client?.end();
     this.connect();
   }
 
@@ -98,7 +97,6 @@ class Turtlekeeper {
 
     client.on('error', () => {});
     client.on('end', () => {
-      // console.log('disconnected from server');
     });
 
     this.client = client;
@@ -112,7 +110,6 @@ class Turtlekeeper {
     if (newMaster) {
       const masterInfo = { method: 'setMaster', ip: newMaster };
       this.role = 'master';
-      // await removeReplica(newMaster);
       // tell replica to become master
       await publishToChannel(masterInfo);
       console.log(`${newMaster} is the new master!`);
@@ -128,7 +125,6 @@ class Turtlekeeper {
   sendHeartbeat() {
     // If not getting response of heart beat, treat it as an connection error.
     this.heartbeatTimeout = setTimeout(() => {
-      // console.log(`heartbeat timeout: ${this.hostIp}`);
       this.heartbeatError();
     }, this.heartrate);
 
@@ -174,7 +170,6 @@ class Turtlekeeper {
         return;
       }
       await this.vote();
-      // this.client.end();
     } catch (error) {
       console.log('connection failed');
     }

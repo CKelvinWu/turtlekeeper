@@ -17,7 +17,7 @@ const server = http.createServer(async (req, res) => {
     if (reqUrl === '/') {
       const master = await getMaster();
       res.writeHead(200);
-      res.write(master);
+      res.write(JSON.stringify({ master }));
       res.end();
     }
   }
