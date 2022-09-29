@@ -111,6 +111,7 @@ class Turtlekeeper {
       let reqBuffer = Buffer.from('');
       client.on('readable', async () => {
         const buf = client.read();
+        if (!buf) return;
         reqBuffer = Buffer.concat([reqBuffer, buf]);
 
         while (true) {
