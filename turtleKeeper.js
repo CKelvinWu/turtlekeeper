@@ -36,11 +36,11 @@ redis.defineCommand('newMaster', {
 });
 
 redis.defineCommand('canVote', {
-  lua: `
+  lua: `  
   local hostIp = KEYS[1]
   local myIp = KEYS[2]
   local REPLICA_KEY = KEYS[3]
-  local REPLICA_KEY = KEYS[4]
+  local MASTER_KEY = KEYS[4]
   local currentTime = tonumber(ARGV[1])
   local voteCountTime = tonumber(ARGV[2])
   local quorum = tonumber(ARGV[3])
@@ -56,29 +56,27 @@ redis.defineCommand('canVote', {
   end
 
   if (vote ~= quorum) then
-    return { false, false }
-  end
-  
-  redis.call('DEL', hostIp)
+    return { 0, 0, 0 }
+  else
+    redis.call('DEL', hostIp)
+    if (isReplica == 1) then
+      redis.call('Hdel', REPLICA_KEY, hostIp)
+      return { 1, 0, 0 }
+    else
+      local replicas = redis.call('HKEYS', REPLICA_KEY)
 
-  if (isReplica) then
-    redis.call('HDEL', REPLICA_KEY, hostIp)
-    return { true, false }
-  end
-
-  local replicas = redis.call('HKEYS', REPLICA_KEY)
-
-  if (not #replicas) then
-    redis.call('DEL', MASTER_KEY);
-    return { true, false }
-  end
-
-  local rand = math.random(#replicas)
-  local newMaster = replicas[rand]
-  redis.('HDEL', REPLICA_KEY, newMaster)
-  redis.call('SET', MASTER_KEY, newMaster)
-
-  return { true, false, newMaster }
+      if (#replicas == 0) then
+        redis.call('DEL', MASTER_KEY);
+        return { 1, 0, 0 }
+      else
+        local rand = math.random(#replicas)
+        local newMaster = replicas[rand]
+        redis.call('HDEL', REPLICA_KEY, newMaster)
+        redis.call('SET', MASTER_KEY, newMaster)
+        return { 1, 1, newMaster } 
+      end
+    end
+  end  
   `,
 });
 
@@ -221,7 +219,7 @@ class Turtlekeeper {
     const { hostIp } = this;
     const voteCountTime = 9000;
     const isReplica = this.role === 'replica';
-    const [canVote, hasReplica, replicas] = await redis.canVote(
+    const [canVote, hasReplica, newMasterIp] = await redis.canVote(
       4,
       hostIp,
       this.ip,
@@ -230,9 +228,9 @@ class Turtlekeeper {
       Date.now(),
       voteCountTime,
       QUORUM,
-      isReplica,
+      +isReplica,
     );
-    console.log(`can Vote: ${canVote}`);
+
     if (!canVote) {
       this.unhealthyCount = 0;
       this.reconnect();
@@ -241,7 +239,6 @@ class Turtlekeeper {
 
     if (isReplica) {
       console.log('replica down! remove from list');
-      // await removeReplica(hostIp);
       this.client.end();
       return;
     }
@@ -250,19 +247,15 @@ class Turtlekeeper {
     console.log('I am selecting the new master');
 
     // vote a replica from lists
-    // const replicas = await getReplicas();
     if (!hasReplica) {
-      // await redis.del(MASTER_KEY);
       console.log('No turtleMQ is alive...');
       return;
     }
-    const newMaster = { method: 'setMaster', ip: replicas[Math.floor(Math.random() * replicas.length)] };
-    await removeReplica(newMaster.ip);
-    await setMaster(newMaster.ip);
+    const newMaster = { method: 'setMaster', ip: newMasterIp };
 
     // tell replica to become master
     await publishToChannel(newMaster);
-    console.log(`${newMaster.ip} is the new master!`);
+    console.log(`${newMasterIp} is the new master!`);
   }
 
   clearHeartbeat() {
