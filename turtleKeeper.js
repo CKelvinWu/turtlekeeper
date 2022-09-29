@@ -106,51 +106,55 @@ class Turtlekeeper {
   }
 
   async connect() {
-    const client = this.socket.connect(this.config);
-    let reqBuffer = Buffer.from('');
-    client.on('readable', async () => {
-      const buf = client.read();
-      reqBuffer = Buffer.concat([reqBuffer, buf]);
+    try {
+      const client = this.socket.connect(this.config);
+      let reqBuffer = Buffer.from('');
+      client.on('readable', async () => {
+        const buf = client.read();
+        reqBuffer = Buffer.concat([reqBuffer, buf]);
 
-      while (true) {
-        if (reqBuffer === null) break;
-        // Indicating end of a request
-        const marker = reqBuffer.indexOf('\r\n\r\n');
-        // Find no seperator
-        if (marker === -1) break;
-        // Record the data after \r\n\r\n
-        const reqHeader = reqBuffer.slice(0, marker).toString();
-        // Keep hte extra readed data in the reqBuffer
-        reqBuffer = reqBuffer.slice(marker + 4);
+        while (true) {
+          if (reqBuffer === null) break;
+          // Indicating end of a request
+          const marker = reqBuffer.indexOf('\r\n\r\n');
+          // Find no seperator
+          if (marker === -1) break;
+          // Record the data after \r\n\r\n
+          const reqHeader = reqBuffer.slice(0, marker).toString();
+          // Keep hte extra readed data in the reqBuffer
+          reqBuffer = reqBuffer.slice(marker + 4);
 
-        const object = JSON.parse(reqHeader);
-        if (object.success) {
-          this[object.method](object);
+          const object = JSON.parse(reqHeader);
+          if (object.success) {
+            this[object.method](object);
+          }
         }
+      });
+
+      client.on('error', () => {});
+      client.on('end', () => {
+      });
+
+      this.client = client;
+      this.send({
+        id: this.id,
+        role: 'turtlekeeper',
+        method: 'heartbeat',
+        ip: this.ip,
+      });
+      const newMaster = await redis.newMaster(2, MASTER_KEY, REPLICA_KEY);
+      if (newMaster) {
+        const masterInfo = { method: 'setMaster', ip: newMaster };
+        this.role = 'master';
+        // tell replica to become master
+        await publishToChannel(masterInfo);
+        console.log(`${newMaster} is the new master!`);
       }
-    });
 
-    client.on('error', () => {});
-    client.on('end', () => {
-    });
-
-    this.client = client;
-    this.send({
-      id: this.id,
-      role: 'turtlekeeper',
-      method: 'heartbeat',
-      ip: this.ip,
-    });
-    const newMaster = await redis.newMaster(2, MASTER_KEY, REPLICA_KEY);
-    if (newMaster) {
-      const masterInfo = { method: 'setMaster', ip: newMaster };
-      this.role = 'master';
-      // tell replica to become master
-      await publishToChannel(masterInfo);
-      console.log(`${newMaster} is the new master!`);
+      this.sendHeartbeat();
+    } catch (error) {
+      console.log(error);
     }
-
-    this.sendHeartbeat();
   }
 
   disconnect() {
