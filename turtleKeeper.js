@@ -40,9 +40,11 @@ redis.defineCommand('canVote', {
   local hostIp = KEYS[1]
   local myIp = KEYS[2]
   local REPLICA_KEY = KEYS[3]
+  local REPLICA_KEY = KEYS[4]
   local currentTime = tonumber(ARGV[1])
   local voteCountTime = tonumber(ARGV[2])
   local quorum = tonumber(ARGV[3])
+  local isReplica = tonumber(ARGV[4])
   
   redis.call('HSET', hostIp, myIp, currentTime)
   local votes = redis.call('HVALS', hostIp)
@@ -54,11 +56,29 @@ redis.defineCommand('canVote', {
   end
 
   if (vote ~= quorum) then
-    return false
+    return { false, false }
   end
   
   redis.call('DEL', hostIp)
-  return true
+
+  if (isReplica) then
+    redis.call('HDEL', REPLICA_KEY, hostIp)
+    return { true, false }
+  end
+
+  local replicas = redis.call('HKEYS', REPLICA_KEY)
+
+  if (not #replicas) then
+    redis.call('DEL', MASTER_KEY);
+    return { true, false }
+  end
+
+  local rand = math.random(#replicas)
+  local newMaster = replicas[rand]
+  redis.('HDEL', REPLICA_KEY, newMaster)
+  redis.call('SET', MASTER_KEY, newMaster)
+
+  return { true, false, newMaster }
   `,
 });
 
@@ -71,6 +91,7 @@ class Turtlekeeper {
     this.heartrate = 3000;
     this.id = randomId();
     this.socket = new net.Socket();
+    this.socket.setKeepAlive(true, 5000);
     this.setIp();
   }
 
@@ -86,12 +107,26 @@ class Turtlekeeper {
 
   async connect() {
     const client = this.socket.connect(this.config);
+    let reqBuffer = Buffer.from('');
     client.on('readable', async () => {
-      const reqHeader = getReqHeader(client);
-      if (!reqHeader) return;
-      const object = JSON.parse(reqHeader);
-      if (object.success) {
-        this[object.method](object);
+      const buf = client.read();
+      reqBuffer = Buffer.concat([reqBuffer, buf]);
+
+      while (true) {
+        if (reqBuffer === null) break;
+        // Indicating end of a request
+        const marker = reqBuffer.indexOf('\r\n\r\n');
+        // Find no seperator
+        if (marker === -1) break;
+        // Record the data after \r\n\r\n
+        const reqHeader = reqBuffer.slice(0, marker).toString();
+        // Keep hte extra readed data in the reqBuffer
+        reqBuffer = reqBuffer.slice(marker + 4);
+
+        const object = JSON.parse(reqHeader);
+        if (object.success) {
+          this[object.method](object);
+        }
       }
     });
 
@@ -180,25 +215,28 @@ class Turtlekeeper {
   async vote() {
     const { hostIp } = this;
     const voteCountTime = 9000;
-    const canVote = await redis.canVote(
-      3,
+    const isReplica = this.role === 'replica';
+    const [canVote, hasReplica, replicas] = await redis.canVote(
+      4,
       hostIp,
       this.ip,
       REPLICA_KEY,
+      MASTER_KEY,
       Date.now(),
       voteCountTime,
       QUORUM,
+      isReplica,
     );
-
+    console.log(`can Vote: ${canVote}`);
     if (!canVote) {
       this.unhealthyCount = 0;
       this.reconnect();
       return;
     }
 
-    if (this.role === 'replica') {
+    if (isReplica) {
       console.log('replica down! remove from list');
-      await removeReplica(hostIp);
+      // await removeReplica(hostIp);
       this.client.end();
       return;
     }
@@ -207,8 +245,9 @@ class Turtlekeeper {
     console.log('I am selecting the new master');
 
     // vote a replica from lists
-    const replicas = await getReplicas();
-    if (!replicas.length) {
+    // const replicas = await getReplicas();
+    if (!hasReplica) {
+      // await redis.del(MASTER_KEY);
       console.log('No turtleMQ is alive...');
       return;
     }
