@@ -60,7 +60,7 @@ redis.defineCommand('canVote', {
   else
     redis.call('DEL', hostIp)
     if (isReplica == 1) then
-      redis.call('Hdel', REPLICA_KEY, hostIp)
+      redis.call('HDEL', REPLICA_KEY, hostIp)
       return { 1, 0, 0 }
     else
       local replicas = redis.call('HKEYS', REPLICA_KEY)
@@ -99,16 +99,19 @@ class Turtlekeeper {
   }
 
   async reconnect() {
-    this.client?.removeAllListeners();
-    this.connect();
+    this.client = this.socket.connect(this.config);
+    if (this.role === 'master') {
+      const masterInfo = { method: 'setMaster', ip: this.hostIp };
+      await publishToChannel(masterInfo);
+    }
+    this.sendHeartbeat();
   }
 
   async connect() {
     try {
-      const client = this.socket.connect(this.config);
+      this.client = this.socket.connect(this.config);
       let reqBuffer = Buffer.from('');
-      client.on('readable', async () => {
-        const buf = client.read();
+      this.client.on('data', async (buf) => {
         if (!buf) return;
         reqBuffer = Buffer.concat([reqBuffer, buf]);
 
@@ -130,17 +133,13 @@ class Turtlekeeper {
         }
       });
 
-      client.on('error', () => {});
-      client.on('end', () => {
+      this.client.on('error', () => {
+        console.log('client on error');
+      });
+      this.client.on('end', () => {
+        console.log('client end');
       });
 
-      this.client = client;
-      this.send({
-        id: this.id,
-        role: 'turtlekeeper',
-        method: 'heartbeat',
-        ip: this.ip,
-      });
       const newMaster = await redis.newMaster(2, MASTER_KEY, REPLICA_KEY);
       if (newMaster) {
         const masterInfo = { method: 'setMaster', ip: newMaster };
@@ -163,6 +162,7 @@ class Turtlekeeper {
   sendHeartbeat() {
     // If not getting response of heart beat, treat it as an connection error.
     this.heartbeatTimeout = setTimeout(() => {
+      console.log('heartbeatError');
       this.heartbeatError();
     }, this.heartrate);
 
@@ -181,15 +181,16 @@ class Turtlekeeper {
   heartbeat(object) {
     this.role = object.role;
     this.clearHeartbeatTimeout();
-    if (object.role === 'master') {
+    if (this.role === 'master') {
       console.log(`master ${object.ip} alive\n`);
-    } else if (object.role === 'replica') {
+    } else if (this.role === 'replica') {
       console.log(`replica ${object.ip} alive\n`);
     }
   }
 
   async heartbeatError() {
     try {
+      this.clearHeartbeatTimeout();
       this.clearHeartbeat();
       const { hostIp } = this;
       const role = await getRole(hostIp);
@@ -202,7 +203,7 @@ class Turtlekeeper {
 
       // handle unstable connection
       if (this.unhealthyCount < 3) {
-        console.log(`unhealthy ${this.role}: ${this.hostIp}`);
+        console.log(`unhealthy ${this.role}: ${this.hostIp}, unhealthCount: ${this.unhealthyCount}`);
         this.unhealthyCount++;
         this.reconnect();
         return;

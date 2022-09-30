@@ -36,17 +36,18 @@ subscriber.subscribe(CHANNEL, () => {
 subscriber.on('message', async (channel, message) => {
   const data = JSON.parse(message);
   if (data.method === 'join') {
+    const master = await getMaster();
+    const isMaster = (master === data.ip);
+
+    // cluster mode
     if (data.role === 'replica') {
-      // const isInReplicas = await redis.hget(REPLICA_KEY, data.ip);
-      // Check if still in health check
-      // if (isInReplicas) {
+      if (isMaster) {
+        return;
+      }
       const replicaConfig = stringToHostAndPort(data.ip);
       await createConnection(replicaConfig, 'replica');
       console.log(`New replica ${data.ip} has joined.`);
-      // }
     } else if (data.role === 'master') {
-      const master = await getMaster();
-      const isMaster = (master === data.ip);
       if (isMaster) {
         const masterConfig = stringToHostAndPort(data.ip);
         await createConnection(masterConfig, 'master');
