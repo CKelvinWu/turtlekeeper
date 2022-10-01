@@ -7,7 +7,7 @@ const { redis } = require('./redis');
 const randomId = () => crypto.randomBytes(8).toString('hex');
 
 const {
-  QUORUM, MASTER_KEY, REPLICA_KEY,
+  QUORUM, MASTER_KEY, REPLICA_KEY, PENDING_KEY,
 } = process.env;
 
 const {

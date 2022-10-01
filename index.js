@@ -10,7 +10,9 @@ const {
   getReqHeader,
 } = require('./util');
 
-const { PORT, CHANNEL, REPLICA_KEY } = process.env;
+const {
+  PORT, CHANNEL, REPLICA_KEY, PENDING_KEY,
+} = process.env;
 
 function createConnection(config, role) {
   const turtleKeeper = new Turtlekeeper(config, role);
@@ -21,6 +23,13 @@ function createConnection(config, role) {
   const masterConfig = await getMasterConfig();
   if (masterConfig) {
     createConnection(masterConfig, 'master');
+  }
+  const replicasLength = await redis.scard(PENDING_KEY);
+  const replicas = await redis.spop(PENDING_KEY, replicasLength);
+  if (replicas.length) {
+    const replicasState = [];
+    replicas.forEach((replica) => replicasState.push(replica, 1));
+    await redis.hmset(REPLICA_KEY, replicasState);
   }
   // Create existing replicas connections
   const replicasConfig = await getReplicasConfig();
@@ -44,6 +53,12 @@ subscriber.on('message', async (channel, message) => {
       if (isMaster) {
         return;
       }
+      const isReplica = await redis.hget(REPLICA_KEY, data.ip);
+      if (isReplica) {
+        return;
+      }
+      await redis.srem(PENDING_KEY, data.ip);
+      await redis.hset(REPLICA_KEY, data.ip, 1);
       const replicaConfig = stringToHostAndPort(data.ip);
       await createConnection(replicaConfig, 'replica');
       console.log(`New replica ${data.ip} has joined.`);
