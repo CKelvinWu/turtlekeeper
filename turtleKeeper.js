@@ -100,10 +100,6 @@ class Turtlekeeper {
 
   async reconnect() {
     this.client = this.socket.connect(this.config);
-    if (this.role === 'master') {
-      const masterInfo = { method: 'setMaster', ip: this.hostIp };
-      await publishToChannel(masterInfo);
-    }
     this.sendHeartbeat();
   }
 
