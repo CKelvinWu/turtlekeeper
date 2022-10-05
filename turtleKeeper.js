@@ -1,83 +1,16 @@
 const net = require('net');
 const EventEmitter = require('node:events');
-
-// const socket = new net.Socket();
 const crypto = require('crypto');
-const { redis } = require('./cache/cache');
-
-const randomId = () => crypto.randomBytes(8).toString('hex');
 
 const { QUORUM, MASTER_KEY, REPLICA_KEY } = process.env;
+const { redis } = require('./cache/cache');
+const { publishToChannel, getRole, getCurrentIp } = require('./util');
+const { getNewMasterScript, voteNewMasterScript } = require('./cache/scripts');
+
 const myEmiter = new EventEmitter();
-
-const {
-  publishToChannel, getRole, getCurrentIp,
-} = require('./util');
-
-redis.defineCommand('newMaster', {
-  lua: `
-  local data = redis.call("GET", KEYS[1])
-  if (data) then
-    return false
-  end
-
-  local replicas = redis.call("HKEYS", KEYS[2])
-  if (#replicas == 0) then
-    return false
-  end
-  
-  local rand = math.random(#replicas)
-  local newMaster = replicas[rand]
-  redis.call("SET", KEYS[1], newMaster)
-  redis.call("HDEL", KEYS[2], newMaster)
-
-  return newMaster`,
-});
-
-redis.defineCommand('canVote', {
-  lua: `  
-  local hostIp = KEYS[1]
-  local myIp = KEYS[2]
-  local REPLICA_KEY = KEYS[3]
-  local MASTER_KEY = KEYS[4]
-  local currentTime = tonumber(ARGV[1])
-  local voteCountTime = tonumber(ARGV[2])
-  local quorum = tonumber(ARGV[3])
-  local isReplica = tonumber(ARGV[4])
-  
-  redis.call('HSET', hostIp, myIp, currentTime)
-  local votes = redis.call('HVALS', hostIp)
-  local vote = 0
-  for i=1,#votes do
-    if (currentTime - votes[i] < voteCountTime) then
-      vote = vote + 1
-    end
-  end
-
-  if (vote ~= quorum) then
-    return { 0, 0, 0 }
-  else
-    redis.call('DEL', hostIp)
-    if (isReplica == 1) then
-      redis.call('HDEL', REPLICA_KEY, hostIp)
-      return { 1, 0, 0 }
-    else
-      local replicas = redis.call('HKEYS', REPLICA_KEY)
-
-      if (#replicas == 0) then
-        redis.call('DEL', MASTER_KEY);
-        return { 1, 0, 0 }
-      else
-        local rand = math.random(#replicas)
-        local newMaster = replicas[rand]
-        redis.call('HDEL', REPLICA_KEY, newMaster)
-        redis.call('SET', MASTER_KEY, newMaster)
-        return { 1, 1, newMaster } 
-      end
-    end
-  end  
-  `,
-});
+const randomId = () => crypto.randomBytes(8).toString('hex');
+redis.defineCommand('getNewMaster', { lua: getNewMasterScript });
+redis.defineCommand('voteNewMaster', { lua: voteNewMasterScript });
 
 class Turtlekeeper {
   constructor(config, role) {
@@ -142,7 +75,7 @@ class Turtlekeeper {
         console.log('client end');
       });
 
-      const newMaster = await redis.newMaster(2, MASTER_KEY, REPLICA_KEY);
+      const newMaster = await redis.getNewMaster(2, MASTER_KEY, REPLICA_KEY);
       if (newMaster) {
         const masterInfo = { method: 'setMaster', ip: newMaster };
         this.role = 'master';
@@ -224,7 +157,7 @@ class Turtlekeeper {
     const { hostIp } = this;
     const voteCountTime = 9000;
     const isReplica = this.role === 'replica';
-    const [canVote, hasReplica, newMasterIp] = await redis.canVote(
+    const [canVote, hasReplica, newMasterIp] = await redis.voteNewMaster(
       4,
       hostIp,
       this.id,

@@ -24,5 +24,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(HTTPPort, () => {
-  console.log(`HTTP server is listen on prot ${HTTPPort}....`);
+  console.log(`TurtleFinder server is listen on prot ${HTTPPort}....`);
 });
