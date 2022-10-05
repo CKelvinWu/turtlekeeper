@@ -3,7 +3,7 @@ const EventEmitter = require('node:events');
 
 // const socket = new net.Socket();
 const crypto = require('crypto');
-const { redis } = require('./cache/redis');
+const { redis } = require('./cache/cache');
 
 const randomId = () => crypto.randomBytes(8).toString('hex');
 

@@ -1,6 +1,6 @@
 require('dotenv').config();
 const http = require('http');
-const { redis } = require('./cache/redis');
+const { redis } = require('./cache/cache');
 
 const {
   NODE_ENV, PORT, MASTER_KEY, REPLICA_KEY, CHANNEL,

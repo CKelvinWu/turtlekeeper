@@ -1,7 +1,7 @@
 require('dotenv').config();
 require('./cache/listener');
 const Turtlekeeper = require('./turtleKeeper');
-const { redis } = require('./cache/redis');
+const { redis } = require('./cache/cache');
 const {
   getMasterConfig,
   getReplicasConfig,

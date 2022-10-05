@@ -1,6 +1,6 @@
 require('dotenv').config();
 const Turtlekeeper = require('../turtleKeeper');
-const { redis } = require('./redis');
+const { redis } = require('./cache');
 const { stringToHostAndPort, getMaster } = require('../util');
 
 const { CHANNEL, REPLICA_KEY, PENDING_KEY } = process.env;
