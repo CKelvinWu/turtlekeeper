@@ -1,18 +1,17 @@
 const net = require('net');
+const EventEmitter = require('node:events');
 
 // const socket = new net.Socket();
 const crypto = require('crypto');
-const { redis } = require('./redis');
+const { redis } = require('./cache/redis');
 
 const randomId = () => crypto.randomBytes(8).toString('hex');
 
-const {
-  QUORUM, MASTER_KEY, REPLICA_KEY, PENDING_KEY,
-} = process.env;
+const { QUORUM, MASTER_KEY, REPLICA_KEY } = process.env;
+const myEmiter = new EventEmitter();
 
 const {
-  removeReplica, getReqHeader, publishToChannel,
-  setMaster, getReplicas, getRole, getCurrentIp, voteInstance, getMaster,
+  publishToChannel, getRole, getCurrentIp,
 } = require('./util');
 
 redis.defineCommand('newMaster', {
@@ -104,6 +103,13 @@ class Turtlekeeper {
   }
 
   async connect() {
+    // FIXME:
+    myEmiter.on('checkRole', async () => {
+      console.log('checkRole---------------');
+      setTimeout(async () => {
+        this.role = await getRole(this.hostIp);
+      }, 1000);
+    });
     try {
       this.client = this.socket.connect(this.config);
       let reqBuffer = Buffer.from('');
@@ -156,6 +162,7 @@ class Turtlekeeper {
   }
 
   sendHeartbeat() {
+    // this.role = await getRole(this.hostIp);
     // If not getting response of heart beat, treat it as an connection error.
     this.heartbeatTimeout = setTimeout(() => {
       console.log('heartbeatError');
@@ -169,13 +176,14 @@ class Turtlekeeper {
     this.send({
       id: this.id,
       role: 'turtlekeeper',
+      setRole: this.role,
       method: 'heartbeat',
       ip: this.ip,
     });
   }
 
   heartbeat(object) {
-    this.role = object.role;
+    // this.role = object.role;
     this.clearHeartbeatTimeout();
     if (this.role === 'master') {
       console.log(`master ${object.ip} alive\n`);
@@ -219,15 +227,17 @@ class Turtlekeeper {
     const [canVote, hasReplica, newMasterIp] = await redis.canVote(
       4,
       hostIp,
-      this.ip,
+      this.id,
       REPLICA_KEY,
       MASTER_KEY,
       Date.now(),
       voteCountTime,
       QUORUM,
+      // TODO: check boolean
       +isReplica,
     );
 
+    myEmiter.emit('checkRole');
     if (!canVote) {
       this.unhealthyCount = 0;
       this.reconnect();

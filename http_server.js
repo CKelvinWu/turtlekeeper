@@ -1,7 +1,7 @@
 require('dotenv').config();
 const http = require('http');
 const url = require('url');
-const { redis } = require('./redis');
+const { redis } = require('./cache/redis');
 
 const { MASTER_KEY } = process.env;
 const HTTPPort = 3006;

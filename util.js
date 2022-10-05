@@ -1,6 +1,6 @@
 require('dotenv').config();
 const http = require('http');
-const { redis } = require('./redis');
+const { redis } = require('./cache/redis');
 
 const {
   NODE_ENV, PORT, MASTER_KEY, REPLICA_KEY, CHANNEL,
@@ -33,10 +33,6 @@ async function getMaster() {
   return master;
 }
 
-async function setMaster(ip) {
-  await redis.set(MASTER_KEY, ip);
-}
-
 async function getMasterConfig() {
   const master = await getMaster();
   return stringToHostAndPort(master);
@@ -48,17 +44,9 @@ async function getReplicasConfig() {
   return replicasConfig;
 }
 
-async function setReplica(key) {
-  await redis.hset(REPLICA_KEY, key, 1);
-}
-
 async function getReplicas() {
   const replicas = await redis.hkeys(REPLICA_KEY);
   return replicas;
-}
-
-async function removeReplica(key) {
-  await redis.hdel(REPLICA_KEY, key);
 }
 
 function getReqHeader(client) {
@@ -100,25 +88,13 @@ async function getRole(ip) {
   return false;
 }
 
-async function voteInstance(turtlemqIp, myIp) {
-  const [, hgetall] = await redis.multi()
-    .hset(turtlemqIp, myIp, Date.now())
-    .hgetall(turtlemqIp).exec();
-  return Object.values(hgetall[1]).filter((time) => (Date.now() - time) < 9000).length;
-}
-
 module.exports = {
   stringToHostAndPort,
   getCurrentIp,
   getMaster,
-  setMaster,
   getMasterConfig,
   getReplicasConfig,
-  setReplica,
-  getReplicas,
-  removeReplica,
   getReqHeader,
   publishToChannel,
   getRole,
-  voteInstance,
 };
