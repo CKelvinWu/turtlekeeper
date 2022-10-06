@@ -18,7 +18,7 @@ async function getCurrentIp() {
   return new Promise((resolve) => {
     http.get({ host: 'api.ipify.org', port: 80, path: '/' }, (res) => {
       res.on('data', (ip) => {
-        console.log(`My public IP address is: ${ip}`);
+        // console.log(`My public IP address is: ${ip}`);
         if (NODE_ENV === 'development') {
           resolve(`localhost:${PORT}`);
         }
@@ -93,6 +93,7 @@ module.exports = {
   getCurrentIp,
   getMaster,
   getMasterConfig,
+  getReplicas,
   getReplicasConfig,
   getReqHeader,
   publishToChannel,

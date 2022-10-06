@@ -1,13 +1,12 @@
 const net = require('net');
-const EventEmitter = require('node:events');
 const crypto = require('crypto');
 
 const { QUORUM, MASTER_KEY, REPLICA_KEY } = process.env;
 const { redis } = require('./cache/cache');
-const { publishToChannel, getRole, getCurrentIp } = require('./util');
+const { publishToChannel, getRole } = require('./util');
 const { getNewMasterScript, voteNewMasterScript } = require('./cache/scripts');
+const { turtlePool } = require('./turtlePool');
 
-const myEmiter = new EventEmitter();
 const randomId = () => crypto.randomBytes(8).toString('hex');
 redis.defineCommand('getNewMaster', { lua: getNewMasterScript });
 redis.defineCommand('voteNewMaster', { lua: voteNewMasterScript });
@@ -16,34 +15,31 @@ class Turtlekeeper {
   constructor(config, role) {
     this.config = config;
     this.hostIp = `${config?.host}:${config?.port}`;
-    this.role = role;
+    this.role = role || 'replica';
     this.unhealthyCount = 0;
     this.heartrate = 3000;
     this.id = randomId();
     this.socket = new net.Socket();
     this.socket.setKeepAlive(true, 5000);
-    this.setIp();
-  }
-
-  async setIp() {
-    this.ip = await getCurrentIp();
     this.connect();
   }
 
   async reconnect() {
+    this.role = await getRole(this.hostIp);
     this.client = this.socket.connect(this.config);
     this.sendHeartbeat();
   }
 
+  async checkRole() {
+    this.role = await getRole(this.hostIp);
+    if (!this.role) {
+      this.disconnect();
+    }
+  }
+
   async connect() {
-    // FIXME:
-    myEmiter.on('checkRole', async () => {
-      console.log('checkRole---------------');
-      setTimeout(async () => {
-        this.role = await getRole(this.hostIp);
-      }, 1000);
-    });
     try {
+      console.log(this.config);
       this.client = this.socket.connect(this.config);
       let reqBuffer = Buffer.from('');
       this.client.on('data', async (buf) => {
@@ -60,28 +56,32 @@ class Turtlekeeper {
           const reqHeader = reqBuffer.slice(0, marker).toString();
           // Keep hte extra readed data in the reqBuffer
           reqBuffer = reqBuffer.slice(marker + 4);
-
-          const object = JSON.parse(reqHeader);
-          if (object.success) {
-            this[object.method](object);
+          try {
+            const object = JSON.parse(reqHeader);
+            if (object.success) {
+              this[object.method](object);
+            }
+          } catch (error) {
+            console.log(error);
           }
         }
       });
 
       this.client.on('error', () => {
-        console.log('client on error');
+        // console.log('client on error');
       });
       this.client.on('end', () => {
         console.log('client end');
       });
-
-      const newMaster = await redis.getNewMaster(2, MASTER_KEY, REPLICA_KEY);
-      if (newMaster) {
-        const masterInfo = { method: 'setMaster', ip: newMaster };
-        this.role = 'master';
-        // tell replica to become master
-        await publishToChannel(masterInfo);
-        console.log(`${newMaster} is the new master!`);
+      if (this.role === 'replica') {
+        const newMaster = await redis.getNewMaster(2, MASTER_KEY, REPLICA_KEY);
+        if (newMaster) {
+          const masterInfo = { method: 'setMaster', ip: newMaster };
+          this.role = 'master';
+          // tell replica to become master
+          await publishToChannel(masterInfo);
+          console.log(`${newMaster} is the new master! start`);
+        }
       }
 
       this.sendHeartbeat();
@@ -91,14 +91,18 @@ class Turtlekeeper {
   }
 
   disconnect() {
+    delete turtlePool[this.hostIp];
+    this.clearHeartbeatTimeout();
+    this.clearHeartbeat();
+    this.client.removeAllListeners();
     this.client.end();
+    console.log(`${this.hostIp} disconnect!!`);
   }
 
   sendHeartbeat() {
     // this.role = await getRole(this.hostIp);
     // If not getting response of heart beat, treat it as an connection error.
     this.heartbeatTimeout = setTimeout(() => {
-      console.log('heartbeatError');
       this.heartbeatError();
     }, this.heartrate);
 
@@ -111,7 +115,7 @@ class Turtlekeeper {
       role: 'turtlekeeper',
       setRole: this.role,
       method: 'heartbeat',
-      ip: this.ip,
+      // ip: this.ip,
     });
   }
 
@@ -132,15 +136,14 @@ class Turtlekeeper {
       const { hostIp } = this;
       const role = await getRole(hostIp);
       if (!role) {
-        console.log(`${hostIp} disconnect! `);
-        this.client.end();
+        this.disconnect();
         return;
       }
       this.role = role;
 
       // handle unstable connection
       if (this.unhealthyCount < 3) {
-        console.log(`unhealthy ${this.role}: ${this.hostIp}, unhealthCount: ${this.unhealthyCount}`);
+        console.log(`unhealthy ${this.role}: ${hostIp}, unhealthCount: ${this.unhealthyCount}`);
         this.unhealthyCount++;
         this.reconnect();
         return;
@@ -170,7 +173,6 @@ class Turtlekeeper {
       +isReplica,
     );
 
-    myEmiter.emit('checkRole');
     if (!canVote) {
       this.unhealthyCount = 0;
       this.reconnect();
@@ -179,7 +181,7 @@ class Turtlekeeper {
 
     if (isReplica) {
       console.log('replica down! remove from list');
-      this.client.end();
+      this.disconnect();
       return;
     }
 
@@ -189,13 +191,17 @@ class Turtlekeeper {
     // vote a replica from lists
     if (!hasReplica) {
       console.log('No turtleMQ is alive...');
+      const newMaster = { method: 'setMaster', deadIp: this.hostIp };
+      await publishToChannel(newMaster);
+      this.disconnect();
       return;
     }
-    const newMaster = { method: 'setMaster', ip: newMasterIp };
+    const newMaster = { method: 'setMaster', ip: newMasterIp, deadIp: this.hostIp };
 
     // tell replica to become master
     await publishToChannel(newMaster);
-    console.log(`${newMasterIp} is the new master!`);
+    console.log(`Publish: ${newMasterIp} is the new master!`);
+    this.disconnect();
   }
 
   clearHeartbeat() {
@@ -208,10 +214,6 @@ class Turtlekeeper {
 
   send(messages) {
     this.client?.write(`${JSON.stringify(messages)}\r\n\r\n`);
-  }
-
-  end() {
-    this.client.end();
   }
 }
 

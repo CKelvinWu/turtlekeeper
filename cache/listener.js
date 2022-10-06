@@ -1,9 +1,12 @@
 require('dotenv').config();
 const Turtlekeeper = require('../turtleKeeper');
 const { redis } = require('./cache');
-const { stringToHostAndPort, getMaster } = require('../util');
+const { stringToHostAndPort, publishToChannel } = require('../util');
+const { turtlePool } = require('../turtlePool');
 
-const { CHANNEL, REPLICA_KEY, PENDING_KEY } = process.env;
+const {
+  CHANNEL, REPLICA_KEY, PENDING_KEY, MASTER_KEY,
+} = process.env;
 
 const subscriber = redis.duplicate();
 subscriber.subscribe(CHANNEL, () => {
@@ -11,32 +14,43 @@ subscriber.subscribe(CHANNEL, () => {
 });
 subscriber.on('message', async (channel, message) => {
   const data = JSON.parse(message);
-  if (data.method === 'join') {
-    const master = await getMaster();
-    const isMaster = (master === data.ip);
-
+  const { method } = data;
+  if (method === 'join') {
     // cluster mode
-    if (data.role === 'replica') {
-      if (isMaster) {
-        await redis.srem(PENDING_KEY, data.ip);
-        return;
-      }
-      const isReplica = await redis.hget(REPLICA_KEY, data.ip);
-      if (isReplica) {
-        return;
-      }
+    if (data.role !== 'replica') {
+      return;
+    }
+    const config = stringToHostAndPort(data.ip);
+    if (turtlePool[data.ip]) {
+      turtlePool[data.ip].checkRole();
       await redis.srem(PENDING_KEY, data.ip);
-      await redis.hset(REPLICA_KEY, data.ip, 1);
-      const replicaConfig = stringToHostAndPort(data.ip);
-      // await createConnection(replicaConfig, 'replica');
-      const turtlekeeper = new Turtlekeeper(replicaConfig, 'replica');
-      console.log(`New replica ${data.ip} has joined.`);
-    } else if (data.role === 'master') {
-      if (isMaster) {
-        const masterConfig = stringToHostAndPort(data.ip);
-        const turtlekeeper = new Turtlekeeper(masterConfig, 'master');
-        console.log('new master!!!');
-      }
+      return;
+    }
+    turtlePool[data.ip] = new Turtlekeeper(config);
+
+    await redis.hset(REPLICA_KEY, data.ip, 1);
+    await redis.srem(PENDING_KEY, data.ip);
+
+    const newMaster = await redis.getNewMaster(2, MASTER_KEY, REPLICA_KEY);
+    if (newMaster) {
+      const masterInfo = { method: 'setMaster', ip: newMaster };
+      // tell replica to become master
+      await publishToChannel(masterInfo);
+      console.log(`${newMaster} is the new master!`);
+    }
+
+    console.log(`New replica ${data.ip} has joined.`);
+  } else if (method === 'setMaster') {
+    console.log('data: ', JSON.stringify(data));
+    if (data.deadIp) {
+      turtlePool[data.deadIp]?.disconnect();
+    }
+    if (!data.ip) {
+      return;
+    }
+    if (turtlePool[data.ip]) {
+      turtlePool[data.ip].checkRole();
+      await redis.srem(PENDING_KEY, data.ip);
     }
   }
 });
