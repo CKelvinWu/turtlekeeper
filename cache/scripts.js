@@ -1,19 +1,21 @@
 module.exports = {
   getNewMasterScript: `
-  local data = redis.call("GET", KEYS[1])
+  local MASTER_KEY = KEYS[1]
+  local REPLICA_KEY = KEYS[2]
+  local data = redis.call("GET", MASTER_KEY)
   if (data) then
     return false
   end
 
-  local replicas = redis.call("HKEYS", KEYS[2])
+  local replicas = redis.call("HKEYS", REPLICA_KEY)
   if (#replicas == 0) then
     return false
   end
   
   local rand = math.random(#replicas)
   local newMaster = replicas[rand]
-  redis.call("SET", KEYS[1], newMaster)
-  redis.call("HDEL", KEYS[2], newMaster)
+  redis.call("SET", MASTER_KEY, newMaster)
+  redis.call("HDEL", REPLICA_KEY, newMaster)
 
   return newMaster`,
   voteNewMasterScript: `  

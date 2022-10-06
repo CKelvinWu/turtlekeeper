@@ -9,7 +9,6 @@ const { REPLICA_KEY, PENDING_KEY } = process.env;
 
 (async () => {
   const master = await getMaster();
-  // const masterConfig = await getMasterConfig();
   if (master) {
     const masterConfig = stringToHostAndPort(master);
     turtlePool[master] = new Turtlekeeper(masterConfig, 'master');
@@ -26,6 +25,7 @@ const { REPLICA_KEY, PENDING_KEY } = process.env;
   // Create existing replicas connections
   const replicas = await getReplicas();
   replicas.forEach(async (replica) => {
+    console.log(`replica:${replica}`);
     const replicaConfig = stringToHostAndPort(replica);
     turtlePool[replica] = new Turtlekeeper(replicaConfig);
   });

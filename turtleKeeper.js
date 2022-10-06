@@ -4,12 +4,10 @@ const crypto = require('crypto');
 const { QUORUM, MASTER_KEY, REPLICA_KEY } = process.env;
 const { redis } = require('./cache/cache');
 const { publishToChannel, getRole } = require('./util');
-const { getNewMasterScript, voteNewMasterScript } = require('./cache/scripts');
+
 const { turtlePool } = require('./turtlePool');
 
 const randomId = () => crypto.randomBytes(8).toString('hex');
-redis.defineCommand('getNewMaster', { lua: getNewMasterScript });
-redis.defineCommand('voteNewMaster', { lua: voteNewMasterScript });
 
 class Turtlekeeper {
   constructor(config, role) {
@@ -31,10 +29,11 @@ class Turtlekeeper {
   }
 
   async checkRole() {
-    this.role = await getRole(this.hostIp);
-    if (!this.role) {
+    const role = await getRole(this.hostIp);
+    if (!role) {
       this.disconnect();
     }
+    this.role = role;
   }
 
   async connect() {
@@ -77,8 +76,6 @@ class Turtlekeeper {
         const newMaster = await redis.getNewMaster(2, MASTER_KEY, REPLICA_KEY);
         if (newMaster) {
           const masterInfo = { method: 'setMaster', ip: newMaster };
-          this.role = 'master';
-          // tell replica to become master
           await publishToChannel(masterInfo);
           console.log(`${newMaster} is the new master! start`);
         }
@@ -91,11 +88,11 @@ class Turtlekeeper {
   }
 
   disconnect() {
-    delete turtlePool[this.hostIp];
     this.clearHeartbeatTimeout();
     this.clearHeartbeat();
     this.client.removeAllListeners();
     this.client.end();
+    delete turtlePool[this.hostIp];
     console.log(`${this.hostIp} disconnect!!`);
   }
 
@@ -134,12 +131,7 @@ class Turtlekeeper {
       this.clearHeartbeatTimeout();
       this.clearHeartbeat();
       const { hostIp } = this;
-      const role = await getRole(hostIp);
-      if (!role) {
-        this.disconnect();
-        return;
-      }
-      this.role = role;
+      await this.checkRole();
 
       // handle unstable connection
       if (this.unhealthyCount < 3) {

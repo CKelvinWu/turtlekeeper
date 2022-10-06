@@ -16,10 +16,10 @@ subscriber.on('message', async (channel, message) => {
   const data = JSON.parse(message);
   const { method } = data;
   if (method === 'join') {
-    // cluster mode
     if (data.role !== 'replica') {
       return;
     }
+    // cluster mode
     const config = stringToHostAndPort(data.ip);
     if (turtlePool[data.ip]) {
       turtlePool[data.ip].checkRole();

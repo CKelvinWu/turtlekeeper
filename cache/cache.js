@@ -1,5 +1,6 @@
 const Redis = require('ioredis');
 require('dotenv').config();
+const { getNewMasterScript, voteNewMasterScript } = require('./scripts');
 
 const env = process.env.NODE_ENV || 'production';
 
@@ -27,5 +28,6 @@ const redisConf = {
   },
 };
 const redis = new Redis(redisConf[env]);
-
+redis.defineCommand('getNewMaster', { lua: getNewMasterScript });
+redis.defineCommand('voteNewMaster', { lua: voteNewMasterScript });
 module.exports = { redis };
