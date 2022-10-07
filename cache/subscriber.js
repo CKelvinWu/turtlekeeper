@@ -33,9 +33,9 @@ subscriber.on('message', async (channel, message) => {
 
     const newMaster = await redis.getNewMaster(2, MASTER_KEY, REPLICA_KEY);
     if (newMaster) {
-      const masterInfo = { method: 'setMaster', ip: newMaster };
+      const setMasterMessage = { method: 'setMaster', ip: newMaster };
       // tell replica to become master
-      await publishToChannel(masterInfo);
+      await publishToChannel(setMasterMessage);
       console.log(`${newMaster} is the new master!`);
     }
 

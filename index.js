@@ -1,5 +1,5 @@
 require('dotenv').config();
-require('./cache/listener');
+require('./cache/subscriber');
 const Turtlekeeper = require('./turtleKeeper');
 const { redis } = require('./cache/cache');
 const { stringToHostAndPort, getReplicas, getMaster } = require('./util');
@@ -22,6 +22,7 @@ const { REPLICA_KEY, PENDING_KEY } = process.env;
     pendingReplicas.forEach((replica) => replicasState.push(replica, 1));
     await redis.hmset(REPLICA_KEY, replicasState);
   }
+
   // Create existing replicas connections
   const replicas = await getReplicas();
   replicas.forEach(async (replica) => {

@@ -75,9 +75,9 @@ class Turtlekeeper {
       if (this.role === 'replica') {
         const newMaster = await redis.getNewMaster(2, MASTER_KEY, REPLICA_KEY);
         if (newMaster) {
-          const masterInfo = { method: 'setMaster', ip: newMaster };
-          await publishToChannel(masterInfo);
-          console.log(`${newMaster} is the new master! start`);
+          const setMasterMessage = { method: 'setMaster', ip: newMaster };
+          await publishToChannel(setMasterMessage);
+          console.log(`${newMaster} is the new master!`);
         }
       }
 
@@ -183,15 +183,15 @@ class Turtlekeeper {
     // vote a replica from lists
     if (!hasReplica) {
       console.log('No turtleMQ is alive...');
-      const newMaster = { method: 'setMaster', deadIp: this.hostIp };
-      await publishToChannel(newMaster);
+      const deadMasterMessage = { method: 'setMaster', deadIp: this.hostIp };
+      await publishToChannel(deadMasterMessage);
       this.disconnect();
       return;
     }
-    const newMaster = { method: 'setMaster', ip: newMasterIp, deadIp: this.hostIp };
+    const setMasterMessage = { method: 'setMaster', ip: newMasterIp, deadIp: this.hostIp };
 
     // tell replica to become master
-    await publishToChannel(newMaster);
+    await publishToChannel(setMasterMessage);
     console.log(`Publish: ${newMasterIp} is the new master!`);
     this.disconnect();
   }
