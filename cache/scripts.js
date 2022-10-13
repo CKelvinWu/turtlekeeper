@@ -2,8 +2,8 @@ module.exports = {
   getNewMasterScript: `
   local MASTER_KEY = KEYS[1]
   local REPLICA_KEY = KEYS[2]
-  local data = redis.call("GET", MASTER_KEY)
-  if (data) then
+  local master = redis.call("GET", MASTER_KEY)
+  if (master) then
     return false
   end
 

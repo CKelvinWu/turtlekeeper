@@ -161,7 +161,6 @@ class Turtlekeeper {
       Date.now(),
       voteCountTime,
       QUORUM,
-      // TODO: check boolean
       +isReplica,
     );
 

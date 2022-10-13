@@ -1,5 +1,5 @@
-const Redis = require('ioredis');
 require('dotenv').config();
+const Redis = require('ioredis');
 const { getNewMasterScript, voteNewMasterScript } = require('./scripts');
 
 const env = process.env.NODE_ENV || 'production';
