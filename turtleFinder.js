@@ -3,8 +3,7 @@ const http = require('http');
 const url = require('url');
 const { redis } = require('./cache/cache');
 
-const { MASTER_KEY } = process.env;
-const HTTPPort = 3006;
+const { MASTER_KEY, TURTLE_FINDER_PORT } = process.env;
 
 async function getMaster() {
   const master = await redis.get(MASTER_KEY);
@@ -23,6 +22,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(HTTPPort, () => {
-  console.log(`TurtleFinder server is listen on prot ${HTTPPort}....`);
+server.listen(TURTLE_FINDER_PORT, () => {
+  console.log(`TurtleFinder server is listen on prot ${TURTLE_FINDER_PORT}....`);
 });
