@@ -25,7 +25,7 @@ class Turtlekeeper {
   }
 
   async reconnect() {
-    this.role = await getRole(this.hostIp);
+    await this.checkRole();
     this.client = this.socket.connect(this.config);
     this.sendHeartbeat();
   }
@@ -101,7 +101,6 @@ class Turtlekeeper {
   }
 
   sendHeartbeat() {
-    // this.role = await getRole(this.hostIp);
     // If not getting response of heart beat, treat it as an connection error.
     this.heartbeatTimeout = setTimeout(() => {
       this.heartbeatError();
@@ -116,12 +115,10 @@ class Turtlekeeper {
       role: 'turtlekeeper',
       setRole: this.role,
       method: 'heartbeat',
-      // ip: this.ip,
     });
   }
 
   heartbeat(object) {
-    // this.role = object.role;
     this.clearHeartbeatTimeout();
     if (this.role === 'master') {
       console.log(`master ${object.ip} alive\n`);

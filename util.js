@@ -1,9 +1,8 @@
 require('dotenv').config();
-const http = require('http');
 const { redis } = require('./cache/cache');
 
 const {
-  NODE_ENV, PORT, MASTER_KEY, REPLICA_KEY, CHANNEL,
+  MASTER_KEY, REPLICA_KEY, CHANNEL,
 } = process.env;
 
 function stringToHostAndPort(address) {
@@ -12,20 +11,6 @@ function stringToHostAndPort(address) {
     return hostAndPort;
   }
   return null;
-}
-
-async function getCurrentIp() {
-  return new Promise((resolve) => {
-    http.get({ host: 'api.ipify.org', port: 80, path: '/' }, (res) => {
-      res.on('data', (ip) => {
-        // console.log(`My public IP address is: ${ip}`);
-        if (NODE_ENV === 'development') {
-          resolve(`localhost:${PORT}`);
-        }
-        resolve(`${ip}:${PORT}`);
-      });
-    }).end();
-  });
 }
 
 async function getMaster() {
@@ -90,7 +75,6 @@ async function getRole(ip) {
 
 module.exports = {
   stringToHostAndPort,
-  getCurrentIp,
   getMaster,
   getMasterConfig,
   getReplicas,
