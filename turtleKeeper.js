@@ -32,8 +32,10 @@ class Turtlekeeper {
     const role = await getRole(this.hostIp);
     if (!role) {
       this.disconnect();
+      return false;
     }
     this.role = role;
+    return true;
   }
 
   async connect() {
@@ -90,8 +92,8 @@ class Turtlekeeper {
   disconnect() {
     this.clearHeartbeatTimeout();
     this.clearHeartbeat();
-    this.client.removeAllListeners();
     this.client.end();
+    this.client.removeAllListeners();
     delete turtlePool[this.hostIp];
     console.log(`${this.hostIp} disconnect!!`);
   }
@@ -131,7 +133,10 @@ class Turtlekeeper {
       this.clearHeartbeatTimeout();
       this.clearHeartbeat();
       const { hostIp } = this;
-      await this.checkRole();
+      const hasRole = await this.checkRole();
+      if (!hasRole) {
+        throw new Error('Server is not in role list');
+      }
 
       // handle unstable connection
       if (this.unhealthyCount < 3) {
@@ -142,7 +147,7 @@ class Turtlekeeper {
       }
       await this.vote();
     } catch (error) {
-      console.log('connection failed');
+      console.log(error);
     }
     // reset unhealthyCount
     this.unhealthyCount = 0;
