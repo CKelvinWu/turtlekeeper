@@ -44,7 +44,9 @@ subscriber.on('message', async (channel, message) => {
     } else if (method === 'setMaster') {
       console.log('data: ', JSON.stringify(data));
       if (data.deadIp) {
-        turtlePool[data.deadIp]?.disconnect();
+        setTimeout(() => {
+          turtlePool[data.deadIp]?.disconnect();
+        }, 1000);
       }
       if (!data.ip) {
         return;

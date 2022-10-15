@@ -1,7 +1,9 @@
 const net = require('net');
 const crypto = require('crypto');
 
-const { QUORUM, MASTER_KEY, REPLICA_KEY } = process.env;
+const {
+  QUORUM, MASTER_KEY, REPLICA_KEY, HEARTRATE, UNHEALTHY_COUNT,
+} = process.env;
 const { redis } = require('./cache/cache');
 const { publishToChannel, getRole } = require('./util');
 
@@ -15,7 +17,7 @@ class Turtlekeeper {
     this.hostIp = `${config?.host}:${config?.port}`;
     this.role = role || 'replica';
     this.unhealthyCount = 0;
-    this.heartrate = 3000;
+    this.heartrate = HEARTRATE * 1000;
     this.id = randomId();
     this.socket = new net.Socket();
     this.socket.setKeepAlive(true, 5000);
@@ -23,7 +25,7 @@ class Turtlekeeper {
   }
 
   async reconnect() {
-    this.role = await getRole(this.hostIp);
+    await this.checkRole();
     this.client = this.socket.connect(this.config);
     this.sendHeartbeat();
   }
@@ -32,8 +34,10 @@ class Turtlekeeper {
     const role = await getRole(this.hostIp);
     if (!role) {
       this.disconnect();
+      return false;
     }
     this.role = role;
+    return true;
   }
 
   async connect() {
@@ -90,14 +94,13 @@ class Turtlekeeper {
   disconnect() {
     this.clearHeartbeatTimeout();
     this.clearHeartbeat();
-    this.client.removeAllListeners();
     this.client.end();
+    this.client.removeAllListeners();
     delete turtlePool[this.hostIp];
     console.log(`${this.hostIp} disconnect!!`);
   }
 
   sendHeartbeat() {
-    // this.role = await getRole(this.hostIp);
     // If not getting response of heart beat, treat it as an connection error.
     this.heartbeatTimeout = setTimeout(() => {
       this.heartbeatError();
@@ -112,12 +115,10 @@ class Turtlekeeper {
       role: 'turtlekeeper',
       setRole: this.role,
       method: 'heartbeat',
-      // ip: this.ip,
     });
   }
 
   heartbeat(object) {
-    // this.role = object.role;
     this.clearHeartbeatTimeout();
     if (this.role === 'master') {
       console.log(`master ${object.ip} alive\n`);
@@ -131,10 +132,13 @@ class Turtlekeeper {
       this.clearHeartbeatTimeout();
       this.clearHeartbeat();
       const { hostIp } = this;
-      await this.checkRole();
+      const hasRole = await this.checkRole();
+      if (!hasRole) {
+        throw new Error('Server is not in role list');
+      }
 
       // handle unstable connection
-      if (this.unhealthyCount < 3) {
+      if (this.unhealthyCount < UNHEALTHY_COUNT) {
         console.log(`unhealthy ${this.role}: ${hostIp}, unhealthCount: ${this.unhealthyCount}`);
         this.unhealthyCount++;
         this.reconnect();
@@ -142,7 +146,7 @@ class Turtlekeeper {
       }
       await this.vote();
     } catch (error) {
-      console.log('connection failed');
+      console.log(error);
     }
     // reset unhealthyCount
     this.unhealthyCount = 0;
@@ -150,7 +154,7 @@ class Turtlekeeper {
 
   async vote() {
     const { hostIp } = this;
-    const voteCountTime = 9000;
+    const voteCountTime = this.heartrate * UNHEALTHY_COUNT;
     const isReplica = this.role === 'replica';
     const [canVote, hasReplica, newMasterIp] = await redis.voteNewMaster(
       4,
