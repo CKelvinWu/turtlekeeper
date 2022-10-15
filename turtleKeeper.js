@@ -157,7 +157,7 @@ class Turtlekeeper {
 
   async vote() {
     const { hostIp } = this;
-    const voteCountTime = 9000;
+    const voteCountTime = this.heartrate * UNHEALTHY_COUNT;
     const isReplica = this.role === 'replica';
     const [canVote, hasReplica, newMasterIp] = await redis.voteNewMaster(
       4,
