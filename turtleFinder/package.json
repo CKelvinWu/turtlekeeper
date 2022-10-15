@@ -1,0 +1,16 @@
+{
+  "name": "turtlefinder",
+  "version": "1.0.0",
+  "description": "",
+  "main": "turtleFinder.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.0.3",
+    "ioredis": "^5.2.3"
+  }
+}

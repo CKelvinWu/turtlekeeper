@@ -1,9 +1,9 @@
 require('dotenv').config();
 const http = require('http');
 const url = require('url');
-const { redis } = require('./cache/cache');
+const { redis } = require('../cache/cache');
 
-const { MASTER_KEY, TURTLE_FINDER_PORT } = process.env;
+const { MASTER_KEY, PORT } = process.env;
 
 async function getMaster() {
   const master = await redis.get(MASTER_KEY);
@@ -22,6 +22,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(TURTLE_FINDER_PORT, () => {
-  console.log(`TurtleFinder server is listen on prot ${TURTLE_FINDER_PORT}....`);
+server.listen(PORT, () => {
+  console.log(`TurtleFinder server is listen on prot ${PORT}....`);
 });
