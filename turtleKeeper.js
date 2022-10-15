@@ -1,7 +1,9 @@
 const net = require('net');
 const crypto = require('crypto');
 
-const { QUORUM, MASTER_KEY, REPLICA_KEY } = process.env;
+const {
+  QUORUM, MASTER_KEY, REPLICA_KEY, HEARTRATE, UNHEALTHY_COUNT,
+} = process.env;
 const { redis } = require('./cache/cache');
 const { publishToChannel, getRole } = require('./util');
 
@@ -15,7 +17,7 @@ class Turtlekeeper {
     this.hostIp = `${config?.host}:${config?.port}`;
     this.role = role || 'replica';
     this.unhealthyCount = 0;
-    this.heartrate = 3000;
+    this.heartrate = HEARTRATE * 1000;
     this.id = randomId();
     this.socket = new net.Socket();
     this.socket.setKeepAlive(true, 5000);
@@ -139,7 +141,7 @@ class Turtlekeeper {
       }
 
       // handle unstable connection
-      if (this.unhealthyCount < 3) {
+      if (this.unhealthyCount < UNHEALTHY_COUNT) {
         console.log(`unhealthy ${this.role}: ${hostIp}, unhealthCount: ${this.unhealthyCount}`);
         this.unhealthyCount++;
         this.reconnect();
